@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { fetchMarketContext, processBatch, getHoldings, getVixQuote, ETFS } from './lib.js';
+import { fetchMarketContext, processBatch, getHoldings, getVixQuote, getChartData, ETFS } from './lib.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +18,18 @@ app.get('/api/vix-status', async (req, res) => {
         const vixData = await getVixQuote();
         if (!vixData) return res.status(500).json({ error: "Failed to fetch VIX data" });
         res.json(vixData);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// API Endpoint: Historical Chart Data
+app.get('/api/chart/:ticker', async (req, res) => {
+    try {
+        const { ticker } = req.params;
+        const data = await getChartData(ticker);
+        res.json(data);
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: e.message });

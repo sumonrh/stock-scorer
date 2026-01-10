@@ -318,7 +318,7 @@ function renderMoversTable() {
         const tr = document.createElement('tr');
 
         let rowContent = `
-            <td><strong>${item.ticker}</strong></td>
+            <td><strong onclick="openChart('${item.ticker}')">${item.ticker}</strong></td>
             <td>${getScoreBadge(item['Quant Score'])}</td>
             <td>${item.price}</td>
             <td class="${getColorClass(item.percentChange)}">${item.percentChange}%</td>
@@ -345,7 +345,7 @@ function renderMoversTable() {
 
 function generateRowHtml(item) {
     return `
-        <td><strong>${item.ticker}</strong></td>
+        <td><strong onclick="openChart('${item.ticker}')">${item.ticker}</strong></td>
         <td>${getScoreBadge(item['Quant Score'])}</td>
         <td>${item.price}</td>
         <td class="${getColorClass(item.percentChange)}">${item.percentChange}%</td>
@@ -384,4 +384,145 @@ function getSqueezeClass(status) {
     if (status === 'Medium') return 'squeeze-med';
     if (status === 'Low') return 'squeeze-low';
     return 'squeeze-no';
+}
+
+// --- CHARTING LOGIC ---
+let chartInstance = null;
+
+async function openChart(ticker) {
+    const modal = document.getElementById('chart-modal');
+    const title = document.getElementById('chart-ticker');
+    const container = document.getElementById('chart-container');
+
+    title.textContent = `${ticker} - Loading...`;
+    modal.classList.add('active');
+
+    // Clear previous chart
+    if (chartInstance) {
+        chartInstance.remove();
+        chartInstance = null;
+    }
+    container.innerHTML = '';
+
+    try {
+        const response = await fetch(`/api/chart/${ticker}`);
+        const data = await response.json();
+
+        if (!data || data.length === 0) {
+            container.innerHTML = '<div style="color:white;text-align:center;padding-top:20%;">No Data Available</div>';
+            return;
+        }
+
+        title.textContent = `${ticker} - Daily Chart`;
+        renderChart(container, data);
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = `<div style="color:red;text-align:center;padding-top:20%;">Error: ${e.message}</div>`;
+    }
+}
+
+function closeChart() {
+    document.getElementById('chart-modal').classList.remove('active');
+    if (chartInstance) {
+        chartInstance.remove();
+        chartInstance = null;
+    }
+}
+
+// Global scope
+window.openChart = openChart;
+window.closeChart = closeChart;
+
+function renderChart(container, data) {
+    const chart = LightweightCharts.createChart(container, {
+        layout: {
+            background: { type: 'solid', color: '#131722' },
+            textColor: '#d1d4dc',
+        },
+        grid: {
+            vertLines: { color: 'rgba(42, 46, 57, 0.5)' },
+            horzLines: { color: 'rgba(42, 46, 57, 0.5)' },
+        },
+        rightPriceScale: {
+            borderVisible: false,
+        },
+        timeScale: {
+            borderVisible: false,
+        },
+        crosshair: {
+            mode: LightweightCharts.CrosshairMode.Normal,
+        },
+    });
+
+    // 1. Candlestick Series
+    const candleSeries = chart.addCandlestickSeries({
+        upColor: '#26a69a',
+        downColor: '#ef5350',
+        borderVisible: false,
+        wickUpColor: '#26a69a',
+        wickDownColor: '#ef5350',
+    });
+
+    candleSeries.setData(data.map(d => ({
+        time: d.time,
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close
+    })));
+
+    // 2. Volume Series (Overlay at bottom)
+    const volumeSeries = chart.addHistogramSeries({
+        priceFormat: { type: 'volume' },
+        priceScaleId: '', // Overlay
+        scaleMargins: { top: 0.8, bottom: 0 },
+    });
+
+    volumeSeries.setData(data.map((d, i) => {
+        const color = (i > 0 && d.close < data[i - 1].close) ? '#ef5350' : '#26a69a';
+        return { time: d.time, value: d.volume, color: color };
+    }));
+
+    // 3. EMAs
+    // Helper to add line
+    const addLine = (key, color, width = 1) => {
+        const line = chart.addLineSeries({ color: color, lineWidth: width, priceScaleId: 'right' });
+        const lineData = data
+            .filter(d => d[key] != null) // Filter out nulls (early dates)
+            .map(d => ({ time: d.time, value: d[key] }));
+        line.setData(lineData);
+        return line;
+    };
+
+    addLine('ema10', '#2962FF', 1);
+    addLine('ema20', '#FF6D00', 2); // Orange - Key
+    addLine('ema50', '#2E7D32', 2); // Green - Inst. Support
+    addLine('ema200', '#D50000', 2); // Red - Long Term
+
+    // 4. Squeeze Markers
+    const markers = [];
+    data.forEach(d => {
+        if (d.squeeze === 'High') {
+            markers.push({
+                time: d.time,
+                position: 'belowBar',
+                color: '#2196F3', // Blue dot
+                shape: 'circle',
+                text: 'S',
+                size: 1
+            });
+        }
+    });
+    // Add markers to main series
+    candleSeries.setMarkers(markers);
+
+    chart.timeScale().fitContent();
+    chartInstance = chart;
+
+    // Resize handler
+    new ResizeObserver(entries => {
+        if (entries.length === 0 || entries[0].target !== container) { return; }
+        const newRect = entries[0].contentRect;
+        chart.applyOptions({ height: newRect.height, width: newRect.width });
+    }).observe(container);
 }

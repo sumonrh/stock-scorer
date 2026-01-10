@@ -161,6 +161,27 @@
             </section>
         </main>
     </div>
+    <!-- Chart Modal -->
+    <div id="chart-modal" class="modal">
+        <div class="modal-content glass-card">
+            <div class="modal-header">
+                <h2 id="chart-ticker">TICKER</h2>
+                <button class="close-btn" onclick="closeChart()">×</button>
+            </div>
+            <div id="chart-container"></div>
+            <div class="chart-legend">
+                <span style="color:#26a69a">Candle</span>
+                <span style="color:#2962FF">10 EMA</span>
+                <span style="color:#FF6D00">20 EMA</span>
+                <span style="color:#2E7D32">50 EMA</span>
+                <span style="color:#D50000">200 EMA</span>
+                <span style="color:#26a69a">Vol</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lightweight Charts -->
+    <script src="https://unpkg.com/lightweight-charts@4.0.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="script.js"></script>
 </body>
 

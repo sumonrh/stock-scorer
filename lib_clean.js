@@ -1,4 +1,4 @@
-import YahooFinance from 'yahoo-finance2';
+﻿import YahooFinance from 'yahoo-finance2';
 const yahooFinance = new YahooFinance();
 
 // --- CONFIGURATION ---
@@ -1033,7 +1033,6 @@ export async function processBatch(tickers, context) {
     // We return directly using RS Multiplier, no batch percentile needed
     return results;
 }
-
 
 // --- CHARTING HELPERS ---
 
