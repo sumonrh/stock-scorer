@@ -18,6 +18,39 @@
                 <span class="icon">⚡</span>
                 <h1>Stock Scorer <span class="highlight">Elite</span></h1>
             </div>
+
+            <div class="vix-indicators">
+                <!-- Swing Trading Indicator -->
+                <div class="indicator-item" id="swing-indicator">
+                    <div class="tooltip">
+                        <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 3v18M6 8l-4 4 4 4M18 8l4 4-4 4" /> <!-- Scale-like Balance icon -->
+                            <path d="M6 12h12" />
+                        </svg>
+                        <span class="tooltip-text">
+                            Swing Trading: <span id="swing-label" class="font-bold">--</span><br>
+                            <span id="swing-vix" class="text-xs">VIX: --</span>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Day Trading Indicator -->
+                <div class="indicator-item" id="day-indicator">
+                    <div class="tooltip">
+                        <svg class="status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="5"></circle>
+                            <path
+                                d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42">
+                            </path>
+                        </svg>
+                        <span class="tooltip-text">
+                            Day Trading: <span id="day-label" class="font-bold">--</span><br>
+                            <span id="day-detail" class="text-xs">--</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
             <div class="status-indicator">
                 <span class="dot"></span> Market Active
             </div>
@@ -35,18 +68,24 @@
                         <table id="etf-table">
                             <thead>
                                 <tr>
-                                    <th>Ticker</th>
-                                    <th>Score</th>
-                                    <th>Price</th>
-                                    <th>% Chg</th>
-                                    <th>RVol</th>
-                                    <th>% Pred</th>
-                                    <th>RS Delta</th>
+                                    <th data-sort="ticker">Ticker <span class="sort-icon"></span></th>
+                                    <th data-sort="Quant Score">Score <span class="sort-icon"></span></th>
+                                    <th data-sort="price">Price <span class="sort-icon"></span></th>
+                                    <th data-sort="percentChange">% Chg <span class="sort-icon"></span></th>
+                                    <th data-sort="RVol">RVol <span class="sort-icon"></span></th>
+                                    <th data-sort="%Pred">% Pred <span class="sort-icon"></span></th>
+                                    <th data-sort="RS Rating">RS(x) <span class="sort-icon"></span></th>
+                                    <th data-sort="atr">ATR <span class="sort-icon"></span></th>
+                                    <th data-sort="percentADR">%ADR <span class="sort-icon"></span></th>
+                                    <th data-sort="10EMA (ATR)">10E <span class="sort-icon"></span></th>
+                                    <th data-sort="20EMA (ATR)">20E <span class="sort-icon"></span></th>
+                                    <th data-sort="50EMA (ATR)">50E <span class="sort-icon"></span></th>
+                                    <th data-sort="squeezeStatus">Sqoz <span class="sort-icon"></span></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td colspan="6" class="loading-text">Loading Market Data...</td>
+                                    <td colspan="13" class="loading-text">Loading Market Data...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -63,19 +102,57 @@
                         <table id="holdings-table">
                             <thead>
                                 <tr>
+                                    <th data-sort="ticker">Ticker <span class="sort-icon"></span></th>
+                                    <th data-sort="Quant Score">Score <span class="sort-icon"></span></th>
+                                    <th data-sort="price">Price <span class="sort-icon"></span></th>
+                                    <th data-sort="percentChange">% Chg <span class="sort-icon"></span></th>
+                                    <th data-sort="RVol">RVol <span class="sort-icon"></span></th>
+                                    <th data-sort="%Pred">% Pred <span class="sort-icon"></span></th>
+                                    <th data-sort="RS Rating">RS(x) <span class="sort-icon"></span></th>
+                                    <th data-sort="atr">ATR <span class="sort-icon"></span></th>
+                                    <th data-sort="percentADR">%ADR <span class="sort-icon"></span></th>
+                                    <th data-sort="10EMA (ATR)">10E <span class="sort-icon"></span></th>
+                                    <th data-sort="20EMA (ATR)">20E <span class="sort-icon"></span></th>
+                                    <th data-sort="50EMA (ATR)">50E <span class="sort-icon"></span></th>
+                                    <th data-sort="squeezeStatus">Sqoz <span class="sort-icon"></span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="13" class="loading-text">Waiting for Request...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section class="movers-section" style="margin-top: 2rem;">
+                <div class="card glass-card" style="height: auto;">
+                    <div class="card-header">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <h2 id="movers-title">Top Market Movers</h2>
+                        </div>
+                        <button id="refresh-movers" class="btn-icon">↺</button>
+                    </div>
+                    <div class="table-container" style="max-height: 400px;">
+                        <table id="movers-table">
+                            <thead>
+                                <tr>
                                     <th>Ticker</th>
-                                    <th>Score</th>
+                                    <th>Quant Score</th>
                                     <th>Price</th>
                                     <th>% Chg</th>
                                     <th>RVol</th>
                                     <th>% Pred</th>
-                                    <th>RS Delta</th>
+                                    <th>Potential</th>
+                                    <th>RS(x)</th>
                                     <th>Squeeze</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td colspan="7" class="loading-text">Waiting for Request...</td>
+                                    <td colspan="9" class="loading-text">Loading Top Movers...</td>
                                 </tr>
                             </tbody>
                         </table>

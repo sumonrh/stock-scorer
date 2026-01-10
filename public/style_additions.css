@@ -1,0 +1,30 @@
+/* ... existing styles ... */
+
+.rank-badge {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+    color: var(--text-primary);
+}
+
+.squeeze-high {
+    color: #ff4d4d;
+    /* Red for high compression/squeeze */
+    font-weight: bold;
+}
+
+.squeeze-med {
+    color: #ffa600;
+    /* Orange */
+}
+
+.squeeze-low {
+    color: #ffff00;
+    /* Yellow */
+}
+
+.squeeze-no {
+    color: var(--text-secondary);
+    font-size: 0.9em;
+}

@@ -114,6 +114,38 @@ export class PandasLite {
         // Use simple rolling mean for ATR approximation (like the python script rolling(14).mean())
         return this.rollingMean(tr, period);
     }
+
+    static calculateSMAValues(values, period) {
+        const sma = new Array(values.length).fill(null);
+        if (values.length < period) return sma;
+
+        for (let i = period - 1; i < values.length; i++) {
+            const slice = values.slice(i - period + 1, i + 1);
+            sma[i] = slice.reduce((sum, val) => sum + val, 0) / period;
+        }
+        return sma;
+    }
+
+    static calculateStdevValues(values, period) {
+        const stdevs = new Array(values.length).fill(null);
+        if (values.length < period) return stdevs;
+
+        for (let i = period - 1; i < values.length; i++) {
+            const slice = values.slice(i - period + 1, i + 1);
+            const mean = slice.reduce((sum, val) => sum + val, 0) / period;
+            const sqDiffs = slice.map(val => Math.pow(val - mean, 2));
+            const variance = sqDiffs.reduce((sum, val) => sum + val, 0) / period;
+            stdevs[i] = Math.sqrt(variance);
+        }
+        return stdevs;
+    }
+
+    static getSqueezeStatus(bbUpper, bbLower, kcUppers, kcLowers) {
+        if (bbUpper > kcUppers[2] || bbLower < kcLowers[2]) return 'No';
+        if (bbUpper <= kcUppers[0] && bbLower >= kcLowers[0]) return 'High';
+        if (bbUpper <= kcUppers[1] && bbLower >= kcLowers[1]) return 'Medium';
+        return 'Low';
+    }
 }
 
 // --- LOGIC CLASSES ---
@@ -646,9 +678,28 @@ export async function fetchMarketContext() {
         const currentVix = vixData.quotes[vixData.quotes.length - 1];
         const prevVix = vixData.quotes[vixData.quotes.length - 2];
 
+        // Calculate SPY Performance Metrics for RS Rating
+        const spyQuotes = spyData.quotes;
+        const getSpyPerf = (days) => {
+            if (spyQuotes.length > days) {
+                const pOld = spyQuotes[spyQuotes.length - 1 - days].close;
+                const pCurr = spyQuotes[spyQuotes.length - 1].close;
+                return ((pCurr - pOld) / pOld) * 100;
+            }
+            return 0;
+        };
+
+        const spyPerformance = {
+            performance3Month: getSpyPerf(63),
+            performance6Month: getSpyPerf(126),
+            performance9Month: getSpyPerf(189),
+            performance12Month: getSpyPerf(252)
+        };
+
         return {
             spyData: spyData.quotes,
             spyMap,
+            spyPerformance, // Add to context
             vixContext: {
                 price: currentVix.close,
                 previousClose: prevVix.close,
@@ -681,6 +732,20 @@ export async function getHoldings(etfs) {
     }
     console.log(`\nFound ${holdings.size} unique holdings.`);
     return Array.from(holdings);
+}
+
+export async function getVixQuote() {
+    try {
+        const quote = await yahooFinance.quote('^VIX');
+        return {
+            price: quote.regularMarketPrice,
+            open: quote.regularMarketOpen,
+            prevClose: quote.regularMarketPreviousClose
+        };
+    } catch (e) {
+        console.error("Error fetching VIX quote:", e.message);
+        return null;
+    }
 }
 
 export function calculateMetrics(ticker, quotes, context) {
@@ -730,45 +795,137 @@ export function calculateMetrics(ticker, quotes, context) {
     const dist20_atr = (currentPrice - ema20) / atr;
     const dist50_atr = (currentPrice - ema50) / atr;
 
-    // Squeeze
-    const std20 = PandasLite.rollingStd(closes, 20);
-    const curStd = std20[std20.length - 1];
-    const lowerBB = ema20 - (2 * curStd);
-    const upperBB = ema20 + (2 * curStd);
-    const lowerKC = ema20 - (1.5 * atr);
-    const upperKC = ema20 + (1.5 * atr);
-    const squeezeStatus = (lowerBB > lowerKC && upperBB < upperKC) ? "High Compression" : "No";
+    // --- Squeeze Logic ---
+    const length = 20;
+    const bb_mult = 2.0;
+    const kc_mults = [1.0, 1.5, 2.0];
+
+    const bbBasisValues = PandasLite.calculateSMAValues(closes, length);
+    const stdevValues = PandasLite.calculateStdevValues(closes, length);
+
+    // TR for KC
+    const trValues = quotes.map((d, i) => {
+        if (i === 0) return d.high - d.low;
+        const pd = quotes[i - 1];
+        return Math.max(d.high - d.low, Math.abs(d.high - pd.close), Math.abs(d.low - pd.close));
+    });
+    const devKCValues = PandasLite.calculateSMAValues(trValues, length);
+
+    const last = closes.length - 1;
+    const bbBasis = bbBasisValues[last];
+    const stdev = stdevValues[last];
+    const devKC = devKCValues[last];
+
+    let squeezeStatus = 'No';
+    if (bbBasis !== null && stdev !== null && devKC !== null) {
+        const bbUpper = bbBasis + (bb_mult * stdev);
+        const bbLower = bbBasis - (bb_mult * stdev);
+
+        const kcUppers = kc_mults.map(m => bbBasis + (devKC * m));
+        const kcLowers = kc_mults.map(m => bbBasis - (devKC * m));
+
+        squeezeStatus = PandasLite.getSqueezeStatus(bbUpper, bbLower, kcUppers, kcLowers);
+    }
+
+    // RS Calculation (Performance Weighting)
+    const getPerf = (days) => {
+        if (quotes.length > days) {
+            const pOld = quotes[quotes.length - 1 - days].close;
+            return (currentPrice - pOld) / pOld;
+        }
+        return 0;
+    };
+
+    const perf3M = getPerf(63);
+    const perf6M = getPerf(126);
+    const perf9M = getPerf(189);
+    const perf12M = getPerf(252);
+
+    // Composite RS Score (Raw) - IBD Style weights
+    const rawRsScore = (perf3M * 0.4) + (perf6M * 0.2) + (perf9M * 0.2) + (perf12M * 0.2);
 
     // RS Calculation
     let rsRating = 1.0;
+    let rsMultiplier = 1.0;
     let rsLineSlope = 0.0;
     let rsOneDayChange = 0.0;
     let spyChange = 0.0;
 
-    if (context && context.spyMap) {
-        // Build RS Line
-        const rsLine = [];
-        quotes.forEach(q => {
-            if (!q.date) return;
-            const dStr = q.date.toISOString().split('T')[0];
-            const spyClose = context.spyMap[dStr];
-            if (spyClose) rsLine.push(q.close / spyClose);
-        });
+    if (context && context.spyPerformance) {
+        // Step 1: Stock Input Performance
+        const calculatePerf = (days) => {
+            if (quotes.length > days) {
+                const pOld = quotes[quotes.length - 1 - days].close;
+                return ((currentPrice - pOld) / pOld) * 100;
+            }
+            return 0;
+        };
 
-        if (rsLine.length > 20) {
-            // Simple RS Rating Proxy
-            const getPerf = (arr, days) => (arr[arr.length - 1] - arr[arr.length - 1 - days]) / arr[arr.length - 1 - days];
-            // We need spy array for this, approximating with just stock perf vs spy perf logic handled elsewhere or simplified here
-            rsRating = 1.0; // Placeholder for full calc
-            rsLineSlope = (rsLine[rsLine.length - 1] - rsLine[rsLine.length - 21]) / rsLine[rsLine.length - 21];
-            rsOneDayChange = (rsLine[rsLine.length - 1] - rsLine[rsLine.length - 2]) / rsLine[rsLine.length - 2];
+        const stockPerf = {
+            performance3Month: calculatePerf(63),
+            performance6Month: calculatePerf(126),
+            performance9Month: calculatePerf(189),
+            performance12Month: calculatePerf(252),
+        };
+
+        const spyPerf = context.spyPerformance;
+
+        // Step 2: Convert to Relatives
+        const stockRelatives = {
+            pr63: 1 + (stockPerf.performance3Month / 100),
+            pr126: 1 + (stockPerf.performance6Month / 100),
+            pr189: 1 + (stockPerf.performance9Month / 100),
+            pr252: 1 + (stockPerf.performance12Month / 100),
+        };
+
+        const spyRelatives = {
+            pr63: 1 + (spyPerf.performance3Month / 100),
+            pr126: 1 + (spyPerf.performance6Month / 100),
+            pr189: 1 + (spyPerf.performance9Month / 100),
+            pr252: 1 + (spyPerf.performance12Month / 100),
+        };
+
+        // Step 3 & 4: Weighted Performance
+        const stockWeightedPerf =
+            (stockRelatives.pr63 * 0.4) +
+            (stockRelatives.pr126 * 0.2) +
+            (stockRelatives.pr189 * 0.2) +
+            (stockRelatives.pr252 * 0.2);
+
+        const spyWeightedPerf =
+            (spyRelatives.pr63 * 0.4) +
+            (spyRelatives.pr126 * 0.2) +
+            (spyRelatives.pr189 * 0.2) +
+            (spyRelatives.pr252 * 0.2);
+
+        // Step 5: Calculate RS Rating
+        let calculatedRating = (spyWeightedPerf > 0) ? (stockWeightedPerf / spyWeightedPerf) : 1.0;
+        rsRating = Math.max(0, Math.min(3, calculatedRating));
+
+        // Update Internal fields for compatibility
+        rsMultiplier = rsRating;
+
+        // Calculate Trend Stats if possible for internal scoring
+        if (context.spyMap) {
+            const rsLine = [];
+            quotes.forEach(q => {
+                if (!q.date) return;
+                const dStr = q.date.toISOString().split('T')[0];
+                const spyClose = context.spyMap[dStr];
+                if (spyClose) rsLine.push(q.close / spyClose);
+            });
+            if (rsLine.length > 21) {
+                rsLineSlope = (rsLine[rsLine.length - 1] - rsLine[rsLine.length - 21]) / rsLine[rsLine.length - 21];
+                rsOneDayChange = (rsLine[rsLine.length - 1] - rsLine[rsLine.length - 2]) / rsLine[rsLine.length - 2];
+            }
         }
 
-        // Calculate SPY change for today
-        const spyQuotes = context.spyData;
-        const spyLast = spyQuotes[spyQuotes.length - 1].close;
-        const spyPrev = spyQuotes[spyQuotes.length - 2].close;
-        spyChange = ((spyLast - spyPrev) / spyPrev) * 100;
+        // SPY Change for today
+        if (context.spyData && context.spyData.length > 2) {
+            const spyLast = context.spyData[context.spyData.length - 1].close;
+            const spyPrev = context.spyData[context.spyData.length - 2].close;
+            spyChange = ((spyLast - spyPrev) / spyPrev) * 100;
+        }
     }
 
     // UD Ratio
@@ -848,7 +1005,13 @@ export function calculateMetrics(ticker, quotes, context) {
         percentADR: Number(percentADR.toFixed(2)),
         '10EMA (ATR)': Number(dist10_atr.toFixed(2)),
         '20EMA (ATR)': Number(dist20_atr.toFixed(2)),
-        '50EMA (ATR)': Number(dist50_atr.toFixed(2))
+        '50EMA (ATR)': Number(dist50_atr.toFixed(2)),
+        // Send rsMultiplier (e.g. 1.25)
+        'RS Rating': Number(rsMultiplier.toFixed(3)),
+
+        // Internal fields
+        rawRsScore,
+        stockObj
     };
 }
 
@@ -866,5 +1029,7 @@ export async function processBatch(tickers, context) {
             // Silent fail for delisted
         }
     }
+
+    // We return directly using RS Multiplier, no batch percentile needed
     return results;
 }
