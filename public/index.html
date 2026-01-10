@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Scorer Elite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="glass-header">
+            <div class="logo">
+                <span class="icon">⚡</span>
+                <h1>Stock Scorer <span class="highlight">Elite</span></h1>
+            </div>
+            <div class="status-indicator">
+                <span class="dot"></span> Market Active
+            </div>
+        </header>
+
+        <main>
+            <section class="dashboard-grid">
+                <!-- ETF Rankings -->
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2>ETF Rankings</h2>
+                        <button id="refresh-etfs" class="btn-icon">↺</button>
+                    </div>
+                    <div class="table-container">
+                        <table id="etf-table">
+                            <thead>
+                                <tr>
+                                    <th>Ticker</th>
+                                    <th>Score</th>
+                                    <th>Price</th>
+                                    <th>% Chg</th>
+                                    <th>RVol</th>
+                                    <th>% Pred</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="6" class="loading-text">Loading Market Data...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Top Holdings -->
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2>Top Opportunities</h2>
+                        <button id="refresh-holdings" class="btn-icon">↺</button>
+                    </div>
+                    <div class="table-container">
+                        <table id="holdings-table">
+                            <thead>
+                                <tr>
+                                    <th>Ticker</th>
+                                    <th>Score</th>
+                                    <th>Price</th>
+                                    <th>% Chg</th>
+                                    <th>RVol</th>
+                                    <th>% Pred</th>
+                                    <th>Squeeze</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="7" class="loading-text">Waiting for Request...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

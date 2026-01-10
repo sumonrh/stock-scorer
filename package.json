@@ -1,0 +1,20 @@
+{
+  "name": "stock-scorer",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cli-table3": "^0.6.5",
+    "colors": "^1.4.0",
+    "express": "^4.22.1",
+    "yahoo-finance2": "^3.11.2"
+  }
+}
