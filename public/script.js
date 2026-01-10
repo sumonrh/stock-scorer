@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function fetchEtfs() {
     const tableBody = document.querySelector('#etf-table tbody');
-    tableBody.innerHTML = '<tr><td colspan="6" class="loading-text">Updating...</td></tr>';
+    tableBody.innerHTML = '<tr><td colspan="7" class="loading-text">Updating...</td></tr>';
 
     try {
         const response = await fetch('/api/etfs');
@@ -21,7 +21,7 @@ async function fetchEtfs() {
 
 async function fetchHoldings() {
     const tableBody = document.querySelector('#holdings-table tbody');
-    tableBody.innerHTML = '<tr><td colspan="7" class="loading-text">Scanning Top Holdings...</td></tr>';
+    tableBody.innerHTML = '<tr><td colspan="8" class="loading-text">Scanning Top Holdings...</td></tr>';
 
     try {
         const response = await fetch('/api/holdings');
@@ -50,6 +50,7 @@ function renderEtfTable(data) {
             <td class="${getColorClass(item.percentChange)}">${item.percentChange}%</td>
             <td>${item.RVol}</td>
             <td class="${getColorClass(item['%Pred'])}">${item['%Pred']}%</td>
+            <td class="${getColorClass(item['RS Delta'])}">${item['RS Delta']}%</td>
         `;
         tbody.appendChild(tr);
     });
@@ -73,6 +74,7 @@ function renderHoldingsTable(data) {
             <td class="${getColorClass(item.percentChange)}">${item.percentChange}%</td>
             <td>${item.RVol}</td>
             <td class="${getColorClass(item['%Pred'])}">${item['%Pred']}%</td>
+            <td class="${getColorClass(item['RS Delta'])}">${item['RS Delta']}%</td>
             <td>${item.squeezeStatus !== 'No' ? '⚠️' : ''}</td>
         `;
         tbody.appendChild(tr);

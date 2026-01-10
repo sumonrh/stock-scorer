@@ -23,7 +23,7 @@ body {
     color: var(--text-main);
     font-family: var(--font-family);
     min-height: 100vh;
-    background-image: 
+    background-image:
         radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.15) 0%, transparent 25%),
         radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.15) 0%, transparent 25%);
 }
@@ -86,7 +86,8 @@ body {
     border: 1px solid var(--glass-border);
     border-radius: 16px;
     padding: 1.5rem;
-    height: 600px; /* Fixed height for scroll */
+    height: 600px;
+    /* Fixed height for scroll */
     display: flex;
     flex-direction: column;
 }
@@ -104,7 +105,7 @@ body {
 }
 
 .btn-icon {
-    background: rgba(255,255,255,0.05);
+    background: rgba(255, 255, 255, 0.05);
     border: none;
     color: var(--text-main);
     width: 32px;
@@ -115,7 +116,7 @@ body {
 }
 
 .btn-icon:hover {
-    background: rgba(255,255,255,0.1);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 /* Table */
@@ -127,29 +128,33 @@ body {
 table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
+    /* Smaller font */
 }
 
 th {
     text-align: left;
     color: var(--text-muted);
     font-weight: 500;
-    padding: 1rem 0.5rem;
+    padding: 0.5rem 0.25rem;
+    /* Reduced padding */
     border-bottom: 1px solid var(--glass-border);
     position: sticky;
     top: 0;
-    background: var(--bg-card); /* Fallback for sticky */
+    background: var(--bg-card);
+    /* Fallback for sticky */
     backdrop-filter: blur(12px);
 }
 
 td {
-    padding: 1rem 0.5rem;
-    border-bottom: 1px solid rgba(255,255,255,0.03);
+    padding: 0.4rem 0.25rem;
+    /* Reduced padding */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
     color: var(--text-main);
 }
 
 tr:hover td {
-    background: rgba(255,255,255,0.02);
+    background: rgba(255, 255, 255, 0.02);
 }
 
 /* Utilities */
@@ -167,9 +172,25 @@ tr:hover td {
     font-size: 0.85rem;
 }
 
-.score-high { background: rgba(16, 185, 129, 0.2); color: var(--success); }
-.score-mid { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
-.score-low { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+.score-high {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--success);
+}
 
-.pos-change { color: var(--success); }
-.neg-change { color: var(--danger); }
+.score-mid {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+}
+
+.score-low {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--danger);
+}
+
+.pos-change {
+    color: var(--success);
+}
+
+.neg-change {
+    color: var(--danger);
+}
