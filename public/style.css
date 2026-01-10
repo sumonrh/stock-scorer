@@ -396,8 +396,20 @@ tr:hover td {
 #chart-container {
     flex: 1;
     width: 100%;
-    position: relative;
+    display: flex;
+    flex-direction: column;
     background: #131722;
+}
+
+#price-chart {
+    flex: 3;
+    width: 100%;
+}
+
+#volume-chart {
+    flex: 1;
+    width: 100%;
+    border-top: 1px solid rgba(42, 46, 57, 0.8);
 }
 
 .chart-legend {
