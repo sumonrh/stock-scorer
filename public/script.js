@@ -49,7 +49,7 @@ function renderEtfTable(data) {
             <td>${item.price}</td>
             <td class="${getColorClass(item.percentChange)}">${item.percentChange}%</td>
             <td>${item.RVol}</td>
-            <td class="${getColorClass(item['%Pred'])}">${item['%Pred']}%</td>
+            <td class="${getColorClass(item['%Pred'])}">${Number(item['%Pred']).toFixed(2)}%</td>
             <td class="${getColorClass(item['RS Delta'])}">${item['RS Delta']}%</td>
         `;
         tbody.appendChild(tr);
@@ -73,7 +73,7 @@ function renderHoldingsTable(data) {
             <td>${item.price}</td>
             <td class="${getColorClass(item.percentChange)}">${item.percentChange}%</td>
             <td>${item.RVol}</td>
-            <td class="${getColorClass(item['%Pred'])}">${item['%Pred']}%</td>
+            <td class="${getColorClass(item['%Pred'])}">${Number(item['%Pred']).toFixed(2)}%</td>
             <td class="${getColorClass(item['RS Delta'])}">${item['RS Delta']}%</td>
             <td>${item.squeezeStatus !== 'No' ? '⚠️' : ''}</td>
         `;

@@ -188,47 +188,70 @@ export class QuantScorer {
     }
 
     static calculateScore(stock, vixData, spyChange) {
+        // --- Input Validation & Sanitization (Sync with provided algorithm) ---
+        const stockCopy = { ...stock };
+        const requiredProps = ['price', 'high', 'low', 'percentChange', 'rsRating', 'udRatio', 'percentADR', 'atr', 'distanceFrom10EMA', 'distanceFrom20EMA', 'distanceFrom50EMA', 'ema10', 'ema20', 'ema50', 'rsLineSlope', 'ema10Prev5', 'ema20Prev5', 'ema50Prev5'];
+
+        for (const prop of requiredProps) {
+            const val = stockCopy[prop];
+            if (val == null || !Number.isFinite(val)) {
+                stockCopy[prop] = (prop === 'rsRating' || prop === 'udRatio') ? 1.0 : (prop === 'price' ? SCORING_CONFIG.MIN_PRICE : 0);
+            }
+        }
+
+        // Explicit ATR Validations
+        if (stockCopy.atr <= 0) stockCopy.atr = 0.0001;
+
+        // Input Clamping
+        stockCopy.percentChange = Math.max(SCORING_CONFIG.MIN_PERCENT_CHANGE, Math.min(SCORING_CONFIG.MAX_PERCENT_CHANGE, stockCopy.percentChange));
+        stockCopy.udRatio = Math.max(0, Math.min(SCORING_CONFIG.MAX_UD_RATIO, stockCopy.udRatio));
+        stockCopy.distanceFrom10EMA = Math.max(SCORING_CONFIG.MIN_EMA_DISTANCE, Math.min(SCORING_CONFIG.MAX_EMA_DISTANCE, stockCopy.distanceFrom10EMA));
+        stockCopy.distanceFrom20EMA = Math.max(SCORING_CONFIG.MIN_EMA_DISTANCE, Math.min(SCORING_CONFIG.MAX_EMA_DISTANCE, stockCopy.distanceFrom20EMA));
+        stockCopy.distanceFrom50EMA = Math.max(SCORING_CONFIG.MIN_EMA_DISTANCE, Math.min(SCORING_CONFIG.MAX_EMA_DISTANCE, stockCopy.distanceFrom50EMA));
+
+
         const weights = this.getAdjustedWeights(vixData);
 
         // Daily Perf
-        const relativeAlpha = stock.percentChange - spyChange;
+        const relativeAlpha = stockCopy.percentChange - spyChange;
         let dailyPerfScore = this.sigmoidNormalize(relativeAlpha, -3, 3, 2.0, true);
-        if (spyChange < -1.5 && stock.percentChange > 0) dailyPerfScore = Math.min(1.0, dailyPerfScore + 0.15);
+        if (spyChange < -1.5 && stockCopy.percentChange > 0) dailyPerfScore = Math.min(1.0, dailyPerfScore + 0.15);
 
         // Strength
-        const strengthScore = this.sigmoidNormalize(stock.rsRating, 0.5, 1.5, 2.0, true);
+        const strengthScore = this.sigmoidNormalize(stockCopy.rsRating, 0.5, 1.5, 2.0, true);
 
         // Accumulation
-        const accumulationScore = this.sigmoidNormalize(stock.udRatio, 0.7, 2.5, 1.5, true);
+        const accumulationScore = this.sigmoidNormalize(stockCopy.udRatio, 0.7, 2.5, 1.5, true);
 
         // Pullback
-        const slope10 = this.calculateSlope(stock.ema10, stock.ema10Prev5);
-        const slope20 = this.calculateSlope(stock.ema20, stock.ema20Prev5);
-        const slope50 = this.calculateSlope(stock.ema50, stock.ema50Prev5);
+        const slope10 = this.calculateSlope(stockCopy.ema10, stockCopy.ema10Prev5);
+        const slope20 = this.calculateSlope(stockCopy.ema20, stockCopy.ema20Prev5);
+        const slope50 = this.calculateSlope(stockCopy.ema50, stockCopy.ema50Prev5);
 
-        const dist10Score = this.getPullbackSubScore(stock.distanceFrom10EMA, 1.5, slope10);
-        const dist20Score = this.getPullbackSubScore(stock.distanceFrom20EMA, 2.0, slope20);
-        const dist50Score = this.getPullbackSubScore(stock.distanceFrom50EMA, 4.0, slope50);
+        const dist10Score = this.getPullbackSubScore(stockCopy.distanceFrom10EMA, 1.5, slope10);
+        const dist20Score = this.getPullbackSubScore(stockCopy.distanceFrom20EMA, 2.0, slope20);
+        const dist50Score = this.getPullbackSubScore(stockCopy.distanceFrom50EMA, 4.0, slope50);
 
-        const rawPullback = (dist10Score * 0.4) + (dist20Score * 0.4) + (dist50Score * 0.2);
-        let pullbackScore = Math.max(0, Math.min(1.0, rawPullback));
+        let rawPullback = (dist10Score * 0.4) + (dist20Score * 0.4) + (dist50Score * 0.2);
 
         // Trend Checks
-        const isEma200Valid = stock.ema200 > 0;
-        let bullish = (stock.price > stock.ema50) && (stock.ema10 > stock.ema20) && (stock.ema20 > stock.ema50);
-        if (isEma200Valid) bullish = bullish && (stock.ema50 > stock.ema200);
+        const isEma200Valid = stockCopy.ema200 && stockCopy.ema200 > 0;
+        let bullish = (stockCopy.price > stockCopy.ema50) && (stockCopy.ema10 > stockCopy.ema20) && (stockCopy.ema20 > stockCopy.ema50);
+        if (isEma200Valid) bullish = bullish && (stockCopy.ema50 > stockCopy.ema200);
 
-        const atr = Math.max(0.0001, stock.atr);
-        const emaSep = Math.abs(stock.ema10 - stock.ema20) / atr;
+        const atr = stockCopy.atr;
+        const emaSep = Math.abs(stockCopy.ema10 - stockCopy.ema20) / atr;
         const isCoiled = emaSep < 0.5;
-        const isBouncing = stock.distanceFrom10EMA >= 0;
-        const hasHighRs = this.sigmoidNormalize(stock.rsLineSlope * 100, 0, 15) > 0.8;
+        const isBouncing = stockCopy.distanceFrom10EMA >= 0;
+        const hasHighRs = this.sigmoidNormalize(stockCopy.rsLineSlope * 100, 0, 15) > 0.8;
 
-        if (bullish && isCoiled && isBouncing && hasHighRs) pullbackScore = Math.min(1.0, pullbackScore + 0.25);
+        if (bullish && isCoiled && isBouncing && hasHighRs) rawPullback += 0.25;
+
+        let pullbackScore = Math.max(0, Math.min(1.0, rawPullback));
 
 
         // Risk
-        const dists = [stock.distanceFrom10EMA, stock.distanceFrom20EMA, stock.distanceFrom50EMA];
+        const dists = [stockCopy.distanceFrom10EMA, stockCopy.distanceFrom20EMA, stockCopy.distanceFrom50EMA];
         const supports = dists.filter(d => d >= 0);
         const resistances = dists.filter(d => d < 0);
         let riskScore = 0;
@@ -244,12 +267,12 @@ export class QuantScorer {
         riskScore = Math.max(0, Math.min(1.0, riskScore));
 
         // RS Momentum
-        const rsSlopePct = stock.rsLineSlope * 100;
+        const rsSlopePct = stockCopy.rsLineSlope * 100;
         const rsMult = (spyChange <= 0 && rsSlopePct > 0) ? 1.25 : 1.0;
         const rsMomScore = Math.min(1.0, this.sigmoidNormalize(rsSlopePct, 0, 15, 1.0) * rsMult);
 
         // Composite
-        const composite =
+        let composite =
             (dailyPerfScore * weights.dailyPerformance) +
             (strengthScore * weights.strength) +
             (accumulationScore * weights.accumulation) +
@@ -258,15 +281,19 @@ export class QuantScorer {
             (rsMomScore * weights.rsLineMomentum);
 
         // Penalties
-        let adrPenalty = stock.percentADR > 20 ? 0.85 : (stock.percentADR < 1.5 ? 0.9 : 1.0);
-        let pricePenalty = 1.0;
-        if (stock.price < 5) {
-            pricePenalty = stock.price < 1 ? 0.6 : 0.7 + 0.3 * ((stock.price - 1) / 4);
-        }
-        let trendPenalty = 1.0;
-        if (stock.ema200 > 0 && stock.price < stock.ema200) trendPenalty = 0.6;
+        let adrPenalty = 1.0;
+        if (stockCopy.percentADR > 20) adrPenalty = 0.85;
+        else if (stockCopy.percentADR < 1.5) adrPenalty = 0.9;
 
-        return Math.max(0, Math.min(100, Math.round(composite * adrPenalty * pricePenalty * trendPenalty * 100)));
+        let pricePenalty = 1.0;
+        if (stockCopy.price < SCORING_CONFIG.MIN_PRICE) {
+            if (stockCopy.price >= 1) pricePenalty = 0.7 + 0.3 * ((stockCopy.price - 1) / (SCORING_CONFIG.MIN_PRICE - 1));
+            else pricePenalty = 0.6;
+        }
+
+        // Note: Removed extra trendPenalty to match original provided algorithm logic exactly.
+
+        return Math.max(0, Math.min(100, Math.round(composite * adrPenalty * pricePenalty * 100)));
     }
 }
 
@@ -290,43 +317,310 @@ export class IntradayPredictor {
         return Math.max(0.0, projVol / avgVolume);
     }
 
-    static predict(inputs) {
-        // ... (Ported simplified logic for brevity, matches structure)
+    static getVolatilityRegime(vixLevel, vixChange, atrZScore) {
+        let baseMultiplier = 1.0;
+        let vixRegime = 'unknown';
+
+        if (vixLevel !== undefined) {
+            if (vixLevel < 15) {
+                vixRegime = 'low_vol';
+                baseMultiplier = 1.2 - (vixChange / 200);
+            } else if (vixLevel > 30) {
+                vixRegime = 'high_vol';
+                baseMultiplier = 0.8 - (vixChange / 100);
+            } else {
+                vixRegime = 'normal_vol';
+                baseMultiplier = 1.0 - (vixChange / 150);
+            }
+        }
+
+        let volatilityRegime = 'normal';
+        let atrAdjustment = 1.0;
+
+        if (atrZScore !== null) {
+            if (Math.abs(atrZScore) > 2) {
+                volatilityRegime = 'extreme';
+                atrAdjustment = atrZScore > 0 ? 0.7 : 1.3;
+            } else if (Math.abs(atrZScore) > 1) {
+                volatilityRegime = 'elevated';
+                atrAdjustment = atrZScore > 0 ? 0.85 : 1.15;
+            }
+        }
+
+        return {
+            regime: vixRegime,
+            multiplier: this.clamp(baseMultiplier * atrAdjustment, 0.5, 1.5),
+            volatilityRegime
+        };
+    }
+
+    static calculateProjectedRange(percentADR, atr14, atr14Mean, atr14Std, currentPrice, volumeMultiplier, gapPercent, params) {
+        const adrFrac = percentADR / 100;
+        let atrZScore = null;
+        let atrBasedRange = 0;
+
+        if ([atr14, atr14Mean, atr14Std].every(Number.isFinite) && atr14Std > 0) {
+            atrZScore = this.clamp((atr14 - atr14Mean) / atr14Std, -3, 3);
+            const atrPercent = atr14 / currentPrice;
+            const volatilityScaler = this.clamp(1 + atrZScore * 0.2, 0.6, 1.6);
+            atrBasedRange = atrPercent * volatilityScaler;
+        }
+
+        let baseRange;
+        if (atrBasedRange > 0) {
+            const atrWeight = params.ATR_WEIGHT ?? 0.7;
+            const adrWeight = 1 - atrWeight;
+            baseRange = (atrBasedRange * atrWeight) + (adrFrac * adrWeight);
+            baseRange = Math.max(baseRange, adrFrac * 0.5);
+        } else {
+            baseRange = adrFrac;
+            atrBasedRange = adrFrac;
+        }
+
+        const volumeAdjustedRange = baseRange * volumeMultiplier;
+        const gapAdjustedRange = Math.max(volumeAdjustedRange, Math.abs(gapPercent / 100));
+        const finalProjected = this.clamp(gapAdjustedRange, adrFrac * 0.3, adrFrac * 12);
+
+        return {
+            projectedRange: finalProjected,
+            atrZScore,
+            breakdown: { adrComponent: adrFrac, atrComponent: atrBasedRange, finalProjected }
+        };
+    }
+
+    static getAdaptiveWeights(gapPercent, relativeVolume, minutesSinceOpen) {
+        const progress = this.clamp(minutesSinceOpen / 390, 0, 1);
+        const isSigGap = Math.abs(gapPercent) > 2;
+        const isHighVol = relativeVolume > 2;
+
+        if (progress < 0.3) {
+            if (isSigGap && isHighVol) return { wOpen: 0.5, wVwap: 0.2, wRoc: 0.3 };
+            if (isSigGap) return { wOpen: 0.6, wVwap: 0.2, wRoc: 0.2 };
+            return { wOpen: 0.4, wVwap: 0.4, wRoc: 0.2 };
+        }
+
+        if (progress < 0.7) {
+            if (isHighVol) return { wOpen: 0.3, wVwap: 0.5, wRoc: 0.2 };
+            return { wOpen: 0.4, wVwap: 0.4, wRoc: 0.2 };
+        }
+
+        return { wOpen: 0.5, wVwap: 0.4, wRoc: 0.1 };
+    }
+
+    static calculateHoldFactor(gapPercent, priceVsOpen, priceVsVwap, params) {
+        const gapAbs = Math.abs(gapPercent);
+        if (gapAbs < 1) return 1.0;
+
+        const gapDirection = Math.sign(gapPercent);
+        let vsLevel = priceVsOpen;
+
+        if (priceVsVwap !== null) {
+            if (gapDirection > 0) vsLevel = Math.min(priceVsOpen, priceVsVwap);
+            else vsLevel = Math.max(priceVsOpen, priceVsVwap);
+        }
+
+        const expectedHold = gapDirection > 0 ?
+            vsLevel >= -params.HOLD_THRESHOLD :
+            vsLevel <= params.HOLD_THRESHOLD;
+
+        if (expectedHold) return 1.0;
+
+        const decayAggression = params.HOLD_FACTOR_DECAY ?? 0.8;
+        const gapFrac = Math.abs(gapPercent / 100);
+        const deterioration = Math.abs(vsLevel) / (gapFrac + 1e-6);
+        return Math.max(0.2, 1 - deterioration * decayAggression);
+    }
+
+    static predict(input) {
+        const TOTAL_TRADING_MINUTES = 390;
         const params = {
             INTRADAY_TANH_SCALE: 3.0, VM_FLOOR: 0.5, VM_CEIL: 10.0,
             TIME_DECAY_ALPHA: 0.5, HOLD_THRESHOLD: 0.01, MAX_VOLUME_BOOST: 0.3,
             ADR_CAP_MULTIPLE: 3.0, ATR_ZSCORE_CAP: 3.0, ATR_WEIGHT: 0.7,
-            EXTREME_VOLATILITY_THRESHOLD: 1.5
+            EXTREME_VOLATILITY_THRESHOLD: 1.5, MOMENTUM_STRONG_ROC: 0.2,
+            LATE_DAY_FRACTION: 0.15, FAILED_GAP_MINUTES: 60,
+            PERF_BIAS_WEAK: 0.35, PERF_BIAS_STRONG: 0.25, HOLD_FACTOR_DECAY: 0.8
         };
 
-        const {
-            openPrice, currentPrice, prevClose, vwap, relativeVolume, percentADR,
-            minutesSinceOpen, roc, gapPercent
-        } = inputs;
+        let {
+            openPrice, currentPrice, prevClose, vwap, relativeVolume,
+            percentADR, atr14, atr14Mean, atr14Std, minutesSinceOpen,
+            roc, gapPercent, vixPctChange, vixLevel, todayHigh, todayLow
+        } = input;
 
-        if (openPrice <= 0 || prevClose <= 0) return 0.0;
+        if (![openPrice, currentPrice, prevClose, percentADR].every(Number.isFinite) ||
+            openPrice <= 0 || prevClose <= 0 || percentADR <= 0 || currentPrice <= 0) {
+            return {
+                predictedEodChange: 0,
+                lowerBound: 0, upperBound: 0, confidenceLevel: 0,
+                regime: 'invalid_input', atrZScore: null
+            };
+        }
+
+        const sanitizedRelVol = this.clamp(Number.isFinite(relativeVolume) ? relativeVolume : 1, 0.1, 20);
+        const sanitizedRoc = this.clamp(Number.isFinite(roc) ? roc : 0, -5, 5);
+        let sanitizedGapPercent = this.clamp(Number.isFinite(gapPercent) ? gapPercent : 0, -50, 50);
+        const sanitizedVixLevel = Number.isFinite(vixLevel) ? vixLevel : undefined;
+        let normalizedVixPctChange = Number.isFinite(vixPctChange) ? vixPctChange : 0;
+        normalizedVixPctChange = this.clamp(normalizedVixPctChange, -50, 50);
+
+        minutesSinceOpen = this.clamp(Number.isFinite(minutesSinceOpen) ? minutesSinceOpen : 0, 0, TOTAL_TRADING_MINUTES);
+        let computedGap = this.clamp(((openPrice - prevClose) / prevClose) * 100, -50, 50);
+
+        let finalGapPercent = computedGap;
+        if (Number.isFinite(gapPercent)) {
+            const isZeroOverride = sanitizedGapPercent === 0 && Math.abs(computedGap) > 0.01;
+            if (!isZeroOverride) finalGapPercent = sanitizedGapPercent;
+        }
+        const gapDirection = Math.sign(finalGapPercent);
+
+        if (minutesSinceOpen >= TOTAL_TRADING_MINUTES) {
+            const finalChange = ((currentPrice - prevClose) / prevClose) * 100;
+            return {
+                predictedEodChange: finalChange, lowerBound: finalChange, upperBound: finalChange,
+                confidenceLevel: 1.0, regime: 'closed'
+            };
+        }
 
         const returnSoFar = (currentPrice - prevClose) / prevClose;
-        const remainingFrac = this.clamp((390 - minutesSinceOpen) / 390, 0, 1);
+        const realizedRange = (Number.isFinite(todayHigh) && Number.isFinite(todayLow) && todayHigh > 0 && todayLow > 0)
+            ? Math.max(0, (todayHigh - todayLow)) / prevClose
+            : Math.abs(returnSoFar);
 
-        // Simplified prediction logic for Node port
-        const volumeMult = this.clamp(1 + Math.log(Math.max(0.1, relativeVolume)), 0.5, 10);
-        const adrFrac = percentADR / 100;
-        const projectedRange = this.clamp(adrFrac * volumeMult, adrFrac * 0.3, adrFrac * 12);
+        const remainingFraction = this.clamp((TOTAL_TRADING_MINUTES - minutesSinceOpen) / TOTAL_TRADING_MINUTES, 0, 1);
+        const volumeMultiplier = this.clamp(1 + Math.log(Math.max(0.1, sanitizedRelVol)), params.VM_FLOOR, params.VM_CEIL);
 
-        const priceVsOpen = (currentPrice - openPrice) / openPrice;
-        let intradayScore = Math.tanh(priceVsOpen * 5.0 + roc * 20); // Simplified heuristic
+        const rangeCalculation = this.calculateProjectedRange(percentADR, atr14, atr14Mean, atr14Std, currentPrice, volumeMultiplier, finalGapPercent, params);
+        const { projectedRange, atrZScore } = rangeCalculation;
+        const clampedAtrZScore = atrZScore !== null ? this.clamp(atrZScore, -params.ATR_ZSCORE_CAP, params.ATR_ZSCORE_CAP) : null;
 
-        const remainingPotential = Math.max(0, projectedRange - Math.abs(returnSoFar));
-        const directionalMove = remainingPotential * intradayScore * Math.pow(remainingFrac, 0.5);
+        const priceVsOpen = openPrice > 0 ? (currentPrice - openPrice) / openPrice : 0;
+        const priceVsVwap = (vwap !== undefined && vwap > 0) ? (currentPrice - vwap) / vwap : null;
 
-        let predictedReturn = returnSoFar + directionalMove;
+        const weights = this.getAdaptiveWeights(finalGapPercent, sanitizedRelVol, minutesSinceOpen);
 
-        // Cap
-        const cap = Math.max(Math.abs(gapPercent / 100), adrFrac * 3);
-        predictedReturn = this.clamp(predictedReturn, -cap, cap);
+        const rocCumulative = sanitizedRoc * Math.max(1, minutesSinceOpen);
+        const isHighVol = sanitizedRelVol > 2;
+        const isSmallGap = Math.abs(finalGapPercent) < 2;
+        const rocInfluence = (isSmallGap || isHighVol) ? rocCumulative : rocCumulative * 0.25;
 
-        return Number((predictedReturn * 100).toFixed(2));
+        let intradayRaw;
+        let performanceScore = 0;
+        if (priceVsVwap !== null) {
+            const belowVWAP = priceVsVwap < 0;
+            const belowOpen = priceVsOpen < 0;
+            if (belowVWAP && belowOpen) {
+                performanceScore -= params.PERF_BIAS_WEAK;
+                if (sanitizedRoc <= 0) performanceScore -= params.PERF_BIAS_WEAK;
+            } else if (!belowVWAP && !belowOpen) {
+                performanceScore += params.PERF_BIAS_STRONG;
+                if (sanitizedRoc >= 0) performanceScore += params.PERF_BIAS_STRONG;
+            }
+            intradayRaw = (priceVsOpen * weights.wOpen) + (priceVsVwap * weights.wVwap) +
+                (Math.tanh(this.clamp(rocInfluence, -10, 10)) * weights.wRoc) + performanceScore;
+        } else {
+            const total = weights.wOpen + weights.wRoc;
+            intradayRaw = (priceVsOpen * (weights.wOpen / total)) +
+                (Math.tanh(this.clamp(rocInfluence, -10, 10)) * (weights.wRoc / total)) + performanceScore;
+        }
+
+        const { regime, multiplier: vixAtrMult, volatilityRegime } = this.getVolatilityRegime(sanitizedVixLevel, normalizedVixPctChange, clampedAtrZScore);
+        const holdFactor = this.calculateHoldFactor(finalGapPercent, priceVsOpen, priceVsVwap, params);
+
+        const gapAligned = Math.sign(sanitizedRoc) === gapDirection;
+        const strongRocAnchor = Math.max(1e-6, params.MOMENTUM_STRONG_ROC);
+        const momentumStrength = this.clamp(Math.abs(sanitizedRoc) / strongRocAnchor, 0, 1);
+        const timeFactor = 0.5 + 0.5 * remainingFraction;
+        const baseBoost = (gapAligned ? 0.2 : 0.1) * momentumStrength * timeFactor;
+        const momentumBoost = 1 + baseBoost * (1 - weights.wRoc);
+
+        const intradayScore = Math.tanh(intradayRaw * params.INTRADAY_TANH_SCALE) * holdFactor * vixAtrMult;
+        const adjustedIntradayScore = intradayScore * momentumBoost;
+
+        let timeDecay = Math.pow(remainingFraction, params.TIME_DECAY_ALPHA);
+        if (sanitizedRelVol > 3) {
+            const boost = Math.min(params.MAX_VOLUME_BOOST, Math.log10(sanitizedRelVol / 3.0) * 0.2);
+            timeDecay *= (1 + Math.max(0, boost));
+        }
+
+        const remainingPotential = Math.max(0, projectedRange - realizedRange);
+        const directionalMove = remainingPotential * adjustedIntradayScore * timeDecay;
+        let predictedEodReturn = returnSoFar + directionalMove;
+
+        // Caps and Bounds
+        let regimeAddon = '';
+        const hasCrossedAgainst = priceVsVwap !== null && gapDirection * priceVsVwap < 0;
+        const isSignificantGap = Math.abs(finalGapPercent) > 2;
+        const hasStayed = minutesSinceOpen > params.FAILED_GAP_MINUTES;
+        const isFailedGap = isSignificantGap && isHighVol && hasCrossedAgainst && hasStayed;
+        if (isFailedGap) regimeAddon = gapDirection > 0 ? '_failed_gap_up' : '_failed_gap_down';
+
+        let baseCap = Math.max(Math.abs(finalGapPercent / 100), (percentADR / 100) * params.ADR_CAP_MULTIPLE);
+        if (clampedAtrZScore !== null && Math.abs(clampedAtrZScore) > params.EXTREME_VOLATILITY_THRESHOLD) {
+            const extremeMultiplier = 1 + (Math.abs(clampedAtrZScore) - params.EXTREME_VOLATILITY_THRESHOLD) * 0.25;
+            baseCap *= Math.min(extremeMultiplier, 2.5);
+        }
+        const normalizedCap = this.clamp(baseCap, (percentADR / 100) * 0.3, (percentADR / 100) * 12);
+
+        let buffer = (percentADR / 100) * (0.05 + Math.min(0.1, (0.05 * sanitizedRelVol) / 2));
+        if (clampedAtrZScore !== null && Math.abs(clampedAtrZScore) > 1) {
+            buffer *= (1 + Math.abs(clampedAtrZScore) * 0.1);
+        }
+        buffer *= 1 + 0.5 * momentumStrength * timeFactor * (gapAligned ? 1 : 0.5);
+
+        const lateDay = remainingFraction < params.LATE_DAY_FRACTION;
+        const strongTrend = gapAligned && !hasCrossedAgainst && momentumStrength > 0.3 && adjustedIntradayScore > 0.3 && (projectedRange - realizedRange) > 0.0 && Math.abs(priceVsOpen) > 0.01;
+
+        const safeTodayHigh = Number.isFinite(todayHigh) ? todayHigh : 0;
+        const safeTodayLow = Number.isFinite(todayLow) ? todayLow : 0;
+
+        let shouldCapUp = gapDirection > 0 && safeTodayHigh > 0 && (!strongTrend || lateDay);
+        let shouldCapDown = gapDirection < 0 && safeTodayLow > 0 && (!strongTrend || lateDay);
+        if (isFailedGap) {
+            if (gapDirection > 0) shouldCapUp = true;
+            else shouldCapDown = true;
+        }
+
+        if (shouldCapUp) predictedEodReturn = Math.min(predictedEodReturn, (safeTodayHigh * (1 + buffer) - prevClose) / prevClose);
+        if (shouldCapDown) predictedEodReturn = Math.max(predictedEodReturn, (safeTodayLow * (1 - buffer) - prevClose) / prevClose);
+
+        predictedEodReturn = this.clamp(predictedEodReturn, -normalizedCap, normalizedCap);
+
+        let baseInterval = projectedRange * 0.4;
+        let confidence = 0.8;
+        if (clampedAtrZScore !== null && Math.abs(clampedAtrZScore) > 2) {
+            confidence -= 0.2;
+            baseInterval *= (1.5 + (Math.abs(clampedAtrZScore) - 2) * 0.3);
+        } else if (clampedAtrZScore !== null) {
+            baseInterval *= (1.0 + Math.abs(clampedAtrZScore) * 0.2);
+        }
+        if (sanitizedRelVol > 5 || sanitizedRelVol < 0.5) confidence -= 0.1;
+        if (sanitizedVixLevel !== undefined && sanitizedVixLevel > 30) confidence -= 0.1;
+        if (isFailedGap) confidence -= 0.15;
+        if (sanitizedRelVol < 0.5 && (clampedAtrZScore === null || Math.abs(clampedAtrZScore) < 1)) confidence -= 0.05;
+        if (gapAligned && !hasCrossedAgainst && momentumStrength > 0.3 && (sanitizedVixLevel === undefined || sanitizedVixLevel < 18) && (clampedAtrZScore === null || Math.abs(clampedAtrZScore) < 1)) confidence += 0.03;
+        confidence = this.clamp(confidence, 0.5, 0.9);
+
+        const volUnc = (sanitizedRelVol > 5) ? 1.3 : (sanitizedRelVol < 0.5 ? 1.4 : 1.0);
+        let interval = baseInterval * vixAtrMult * volUnc;
+        interval = Math.max(interval, (percentADR / 100) * 0.05);
+
+        let lower = this.clamp(predictedEodReturn - interval, -normalizedCap, normalizedCap);
+        let upper = this.clamp(predictedEodReturn + interval, -normalizedCap, normalizedCap);
+
+        if (shouldCapUp && safeTodayHigh > 0) upper = Math.min(upper, (safeTodayHigh * (1 + buffer) - prevClose) / prevClose);
+        if (shouldCapDown && safeTodayLow > 0) lower = Math.max(lower, (safeTodayLow * (1 - buffer) - prevClose) / prevClose);
+
+        return {
+            predictedEodChange: parseFloat((predictedEodReturn * 100).toFixed(2)),
+            lowerBound: parseFloat((lower * 100).toFixed(2)),
+            upperBound: parseFloat((upper * 100).toFixed(2)),
+            confidenceLevel: parseFloat(confidence.toFixed(2)),
+            regime: regime + regimeAddon,
+            atrZScore,
+            volatilityRegime,
+            projectedRangeBreakdown: rangeCalculation.breakdown
+        };
     }
 }
 
@@ -486,12 +780,10 @@ export function calculateMetrics(ticker, quotes, context) {
     }
     const udRatio = downVol > 0 ? upVol / downVol : 5.0;
 
-    // Intraday Setup
+    // Prepare Extended Inputs for Enhanced Predictor
     const now = new Date();
-    // Assuming market open 9:30 ET. Convert current time to ET minutes from open.
-    // Simplified: Assuming running during market hours or just using static calc
-    let minutesSinceOpen = 390; // Default to EOD
-    // ... Real time calculation requires timezone handling (luxon), skipping for brevity
+    // Simplified: EOD assumption if not real-time handling
+    let minutesSinceOpen = 390;
 
     const avgVol = PandasLite.mean(volumes.slice(-20));
     const curVol = volumes[volumes.length - 1];
@@ -501,12 +793,37 @@ export function calculateMetrics(ticker, quotes, context) {
     const gapPercent = ((openPrice - prevClose) / prevClose) * 100;
     const roc = minutesSinceOpen > 0 ? percentChange / minutesSinceOpen : 0;
 
+    // Extended Inputs
+    const atr14Mean = PandasLite.mean(atrs.slice(-14));
+    const atr14Std = PandasLite.std(atrs.slice(-14));
+
+    let vixPctChange = 0;
+    if (context && context.vixContext && context.vixContext.previousClose) {
+        vixPctChange = ((context.vixContext.price - context.vixContext.previousClose) / context.vixContext.previousClose) * 100;
+    }
+
     const predictorInputs = {
-        openPrice, currentPrice, prevClose, vwap: (high + low + currentPrice) / 3,
-        relativeVolume: relVol, percentADR, minutesSinceOpen, roc, gapPercent
+        openPrice,
+        currentPrice,
+        prevClose,
+        vwap: quotes[quotes.length - 1].close, // Approx if real VWAP not avail, or (H+L+C)/3 earlier
+        relativeVolume: relVol,
+        percentADR,
+        minutesSinceOpen,
+        roc,
+        gapPercent,
+        atr14: atr,
+        atr14Mean,
+        atr14Std,
+        vixPctChange,
+        vixLevel: context && context.vixContext ? context.vixContext.price : undefined,
+        todayHigh: high,
+        todayLow: low
     };
 
-    const predChange = IntradayPredictor.predict(predictorInputs);
+    // Use enhanced predict
+    const predictionResult = IntradayPredictor.predict(predictorInputs);
+    const predChange = predictionResult.predictedEodChange;
 
     // Score
     const stockObj = {
