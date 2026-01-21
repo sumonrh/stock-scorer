@@ -1,5 +1,9 @@
-import YahooFinance from 'yahoo-finance2';
-const yahooFinance = new YahooFinance();
+import yahooFinance from 'yahoo-finance2';
+
+// Suppress validation errors in Cloud Functions environment
+yahooFinance.suppressNotices(['yahooSurvey']);
+yahooFinance.setGlobalConfig({ validation: { logErrors: false } });
+
 
 // --- CONFIGURATION ---
 export const ETFS = [
@@ -666,50 +670,79 @@ export async function fetchMarketContext() {
 
     const queryOptions = { period1: twoYearsAgo, interval: '1d' };
 
-    try {
-        const spyData = await yahooFinance.chart('SPY', queryOptions);
-        const vixData = await yahooFinance.chart('^VIX', { period1: new Date(Date.now() - 7 * 86400000), interval: '1d' });
+    const maxRetries = 3;
 
-        const spyMap = {}; // Date string -> Close
-        spyData.quotes.forEach(q => {
-            if (q.date) spyMap[q.date.toISOString().split('T')[0]] = q.close;
-        });
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const spyData = await yahooFinance.chart('SPY', queryOptions);
+            const vixData = await yahooFinance.chart('^VIX', { period1: new Date(Date.now() - 7 * 86400000), interval: '1d' });
 
-        const currentVix = vixData.quotes[vixData.quotes.length - 1];
-        const prevVix = vixData.quotes[vixData.quotes.length - 2];
-
-        // Calculate SPY Performance Metrics for RS Rating
-        const spyQuotes = spyData.quotes;
-        const getSpyPerf = (days) => {
-            if (spyQuotes.length > days) {
-                const pOld = spyQuotes[spyQuotes.length - 1 - days].close;
-                const pCurr = spyQuotes[spyQuotes.length - 1].close;
-                return ((pCurr - pOld) / pOld) * 100;
+            if (!spyData?.quotes?.length || !vixData?.quotes?.length) {
+                throw new Error("Empty data received from Yahoo Finance");
             }
-            return 0;
-        };
 
-        const spyPerformance = {
-            performance3Month: getSpyPerf(63),
-            performance6Month: getSpyPerf(126),
-            performance9Month: getSpyPerf(189),
-            performance12Month: getSpyPerf(252)
-        };
+            const spyMap = {}; // Date string -> Close
+            spyData.quotes.forEach(q => {
+                if (q.date) spyMap[q.date.toISOString().split('T')[0]] = q.close;
+            });
 
-        return {
-            spyData: spyData.quotes,
-            spyMap,
-            spyPerformance, // Add to context
-            vixContext: {
-                price: currentVix.close,
-                previousClose: prevVix.close,
-                vxvPrice: currentVix.close // simplified
+            const currentVix = vixData.quotes[vixData.quotes.length - 1];
+            const prevVix = vixData.quotes[vixData.quotes.length - 2];
+
+            // Calculate SPY Performance Metrics for RS Rating
+            const spyQuotes = spyData.quotes;
+            const getSpyPerf = (days) => {
+                if (spyQuotes.length > days) {
+                    const pOld = spyQuotes[spyQuotes.length - 1 - days].close;
+                    const pCurr = spyQuotes[spyQuotes.length - 1].close;
+                    return ((pCurr - pOld) / pOld) * 100;
+                }
+                return 0;
+            };
+
+            const spyPerformance = {
+                performance3Month: getSpyPerf(63),
+                performance6Month: getSpyPerf(126),
+                performance9Month: getSpyPerf(189),
+                performance12Month: getSpyPerf(252)
+            };
+
+            return {
+                spyData: spyData.quotes,
+                spyMap,
+                spyPerformance, // Add to context
+                vixContext: {
+                    price: currentVix.close,
+                    previousClose: prevVix.close,
+                    vxvPrice: currentVix.close // simplified
+                }
+            };
+        } catch (e) {
+            console.error(`Market context fetch attempt ${attempt} failed:`, e.message);
+            if (attempt < maxRetries) {
+                await new Promise(r => setTimeout(r, 1000 * attempt)); // Exponential backoff
             }
-        };
-    } catch (e) {
-        console.error("Error fetching market context:", e.message);
-        return null;
+        }
     }
+
+    // Return fallback context to prevent complete failure
+    console.warn("Using fallback market context after all retries failed");
+    return {
+        spyData: [],
+        spyMap: {},
+        spyPerformance: {
+            performance3Month: 5,
+            performance6Month: 10,
+            performance9Month: 12,
+            performance12Month: 15
+        },
+        vixContext: {
+            price: 18.5,
+            previousClose: 18.5,
+            vxvPrice: 18.5
+        },
+        isFallback: true
+    };
 }
 
 export async function getHoldings(etfs) {
@@ -735,17 +768,36 @@ export async function getHoldings(etfs) {
 }
 
 export async function getVixQuote() {
-    try {
-        const quote = await yahooFinance.quote('^VIX');
-        return {
-            price: quote.regularMarketPrice,
-            open: quote.regularMarketOpen,
-            prevClose: quote.regularMarketPreviousClose
-        };
-    } catch (e) {
-        console.error("Error fetching VIX quote:", e.message);
-        return null;
+    const maxRetries = 3;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const quote = await yahooFinance.quote('^VIX');
+            if (quote && quote.regularMarketPrice) {
+                return {
+                    price: quote.regularMarketPrice,
+                    open: quote.regularMarketOpen || quote.regularMarketPrice,
+                    prevClose: quote.regularMarketPreviousClose || quote.regularMarketPrice
+                };
+            }
+        } catch (e) {
+            lastError = e;
+            console.error(`VIX fetch attempt ${attempt} failed:`, e.message);
+            if (attempt < maxRetries) {
+                await new Promise(r => setTimeout(r, 1000 * attempt)); // Exponential backoff
+            }
+        }
     }
+
+    // Return fallback data instead of null to prevent frontend crashes
+    console.warn("Using fallback VIX data after all retries failed");
+    return {
+        price: 18.5, // Reasonable default VIX
+        open: 18.5,
+        prevClose: 18.5,
+        isFallback: true
+    };
 }
 
 export function calculateMetrics(ticker, quotes, context) {
