@@ -722,7 +722,8 @@ export async function getHoldings(etfs) {
             const summary = await yahooFinance.quoteSummary(etf, { modules: ["topHoldings"] });
             if (summary.topHoldings && summary.topHoldings.holdings) {
                 summary.topHoldings.holdings.forEach(h => {
-                    if (h.symbol) holdings.add(h.symbol);
+                    // Filter out non-US stocks (those with exchange suffixes like .TO, .T, .TW, .HK, .TA, etc.)
+                    if (h.symbol && !h.symbol.includes('.')) holdings.add(h.symbol);
                 });
                 process.stdout.write(".");
             }
@@ -730,7 +731,7 @@ export async function getHoldings(etfs) {
             process.stdout.write("x");
         }
     }
-    console.log(`\nFound ${holdings.size} unique holdings.`);
+    console.log(`\nFound ${holdings.size} unique US-listed holdings.`);
     return Array.from(holdings);
 }
 
@@ -948,7 +949,7 @@ export function calculateMetrics(ticker, quotes, context) {
     const etMinutesOfDay = etHour * 60 + etMinute;
     const marketOpenMinutes = 9 * 60 + 30; // 9:30 AM = 570 minutes
     const marketCloseMinutes = 16 * 60; // 4:00 PM = 960 minutes
-    
+
     let minutesSinceOpen;
     // Check if it's a weekday and within market hours
     if (etDay >= 1 && etDay <= 5 && etMinutesOfDay >= marketOpenMinutes && etMinutesOfDay < marketCloseMinutes) {

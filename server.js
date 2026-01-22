@@ -9,6 +9,17 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Helper function to check if a ticker is a US-listed stock
+// Returns false for tickers with foreign exchange suffixes like .TO, .T, .TW, .HK, .TA, etc.
+function isUSStock(symbol) {
+    if (!symbol || typeof symbol !== 'string') return false;
+    // US stocks typically don't have dots in their symbols (except special cases starting with ^)
+    if (symbol.includes('.') && !symbol.startsWith('^')) {
+        return false;
+    }
+    return true;
+}
+
 // Serve static files from 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -116,8 +127,10 @@ app.get('/api/holdings', async (req, res) => {
         const subset = stocksOnly.slice(0, 50);
 
         const results = await processBatch(subset, context);
-        results.sort((a, b) => b['Quant Score'] - a['Quant Score']);
-        res.json(results);
+        // Filter out any non-US stocks from results
+        const usResults = results.filter(item => isUSStock(item.ticker));
+        usResults.sort((a, b) => b['Quant Score'] - a['Quant Score']);
+        res.json(usResults);
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: e.message });
@@ -151,8 +164,10 @@ app.get('/api/movers', async (req, res) => {
         const tickers = await getTrackedStocks();
         const results = await processBatch(tickers, context);
 
-        // Filter: RVol > 1 (High Volume Interest)
-        const highVol = results.filter(item => item.RVol > 1.0);
+        // Filter out non-US stocks first
+        const usResults = results.filter(item => isUSStock(item.ticker));
+        // Then filter for high volume interest: RVol > 1
+        const highVol = usResults.filter(item => item.RVol > 1.0);
 
         const open = isMarketOpen();
         let movers = [];
